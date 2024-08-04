@@ -1,4 +1,4 @@
-# RISC-V Linux Emulator for ESP32
+# ESP32 running Linux!!!
 This project implements a RISC-V emulator on the ESP32 microcontroller, capable of running a minimal Linux environment.
 
 # Description
