@@ -1,50 +1,25 @@
-// gcc -pthread -D LINUX main/riscv-esp32.c -o /tmp/riscv && /tmp/riscv
+/*
+ * machine-esp32-s3n16r8.c - ESP32 running Linux!!!
+ *
+ * Written by Leonardo Soares <leonardobsi@gmail.com>
+ *
+ */
 
 #include <stdio.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
 
-#ifdef CONFIG_IDF_TARGET_LINUX
-
-#include <assert.h>
-
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <termios.h>
-#include <sys/time.h>
-
-#include <net/if.h>
-#include <sys/ioctl.h>
-#include <linux/if_tun.h>
-
-int fd_tun;
-
-#endif
-
-#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32)
 #include <driver/uart.h>
 #include <driver/gpio.h>
 #include <esp_private/wifi.h>
 #include <esp_timer.h>
 #include <nvs_flash.h>
-#endif
-
-#ifdef CONFIG_IDF_TARGET_ESP32S3
 
 #include <esp_littlefs.h>
 #include <tinyusb.h>
 #include <tusb_cdc_acm.h>
 #include <tusb_console.h>
-
-#elif defined CONFIG_IDF_TARGET_ESP32
-
-#include <esp_vfs_fat.h>
-
-#endif
 
 #define MIN(x, y) (x < y ? x : y)
 #define MAX(x, y) (x > y ? x : y)
@@ -224,7 +199,6 @@ struct window_t {
 };
 struct window_t window_[0xf00000 /*15MB*/ / LRU_SEC_SIZE];
 
-#ifdef CONFIG_IDF_TARGET_ESP32S3
 
 const esp_partition_t *partition_data;
 
@@ -259,39 +233,6 @@ struct window_t* cpu_lru_translate(uint32_t addr) {
 
 	return win;
 }
-#elif defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_LINUX)
-
-struct window_t* cpu_lru_translate(uint32_t addr) {
-
-	struct window_t *win = &window_[addr / LRU_SEC_SIZE];
-
-	win->time = ++lru_time;
-
-	if (win->data)
-		return win;
-
-	struct window_t *tmp= (struct window_t*) 0;
-	for(uint32_t x = 0; x < (0xf00000 / LRU_SEC_SIZE); x++ )
-		if(window_[x].data && (!tmp || window_[x].time < tmp->time)){
-			tmp = &window_[x];
-		}
-
-	if (tmp->w) {
-		tmp->w= 0;
-
-		fseek((FILE*) partition.data, tmp->sector * LRU_SEC_SIZE, SEEK_SET);
-		fwrite(tmp->data, 1 /*sizeof(uint8_t)*/, LRU_SEC_SIZE, (FILE*) partition.data);
-	}
-	win->data= tmp->data;
-
-	tmp->data = (uint8_t*) 0;
-
-	fseek((FILE*) partition.data, win->sector * LRU_SEC_SIZE, SEEK_SET);
-	fread(win->data, 1 /*sizeof(uint8_t)*/, LRU_SEC_SIZE, (FILE*) partition.data);
-
-	return win;
-}
-#endif
 
 void stream_lru_read(uint32_t addr, uint32_t size, uint8_t *buff) {
 
@@ -664,7 +605,6 @@ void uart1_write(uint32_t offset, uint8_t value) {
 	switch (offset) {
 	case 0b000:
 
-#ifndef CONFIG_IDF_TARGET_LINUX
 		if (~uart_com_1.lcr & (1 << 7 /*Divisor Enable*/)) {
 			uart_com_1.thr = value;
 			uart_write_bytes(UART_NUM_1, &uart_com_1.thr, sizeof(uart_com_1.thr));
@@ -672,7 +612,6 @@ void uart1_write(uint32_t offset, uint8_t value) {
 			uart_com_1.dll = value;
 			ESP_ERROR_CHECK( uart_set_baudrate(UART_NUM_1, 3686400 / (16 * uart_com_1.dll)));
 		}
-#endif
 		break;
 	case 0b001:
 		(uart_com_1.lcr & (1 << 7 /*Divisor Enable*/) ? (uart_com_1.dlm = value) : (uart_com_1.ier = value));
@@ -689,7 +628,6 @@ void uart1_write(uint32_t offset, uint8_t value) {
 		break;
 	case 0b011:
 		uart_com_1.lcr = value;
-#ifndef CONFIG_IDF_TARGET_LINUX
 		ESP_ERROR_CHECK(uart_set_word_length(UART_NUM_1, uart_com_1.lcr & 0x03));
 
 		if ((uart_com_1.lcr >> 3) /*Parity Enable*/& 1) {
@@ -699,7 +637,6 @@ void uart1_write(uint32_t offset, uint8_t value) {
 
 		uint8_t stop_bits[2] = { UART_STOP_BITS_1, UART_STOP_BITS_2 };
 		ESP_ERROR_CHECK( uart_set_stop_bits(UART_NUM_1, stop_bits[(uart_com_1.lcr >> 2 /*Stop bits*/) & 1]));
-#endif
 		break;
 	case 0b100:
 		uart_com_1.mcr = value;
@@ -771,13 +708,7 @@ void virtio_notified(){
 			uint8_t buff[virtq_desc.len];
 			stream_lru_read(virtq_desc.addr - RAM_BASE, sizeof(buff), (uint8_t*) &buff);
 
-#ifdef CONFIG_IDF_TARGET_ESP32S3
 			fwrite(&buff, sizeof(uint8_t), sizeof(buff), stdout);
-#elif defined CONFIG_IDF_TARGET_ESP32
-			uart_write_bytes(UART_NUM_0, &buff, sizeof(buff));
-#elif defined CONFIG_IDF_TARGET_LINUX
-			write(STDOUT_FILENO, buff , sizeof(buff));
-#endif
 			// ######################################################################
 
 			virtq_used.ring[virtq_used.idx % virtio_queue->num].id = virtq_avail.ring[virtq_used.idx % virtio_queue->num];
@@ -902,7 +833,6 @@ void virtio_notified(){
 				.value= 0x00
 		};
 
-#ifndef CONFIG_IDF_TARGET_LINUX
 		struct virtio_gpio_req_t {
 			uint16_t type;
 			uint16_t gpio;
@@ -953,7 +883,6 @@ void virtio_notified(){
 			virtio_gpio_resp.status = (0x00 /*VIRTIO_GPIO_STATUS_OK*/);
 
 		} while (0);
-#endif
 		stream_lru_write(virtq_desc_1.addr - RAM_BASE, sizeof(struct virtio_gpio_resp_t), (uint8_t*) &virtio_gpio_resp);
 		// ######################################################################
 
@@ -1008,11 +937,7 @@ void virtio_notified(){
 
 			stream_lru_read(virtq_desc.addr - RAM_BASE, sizeof(struct virtio_net_packet_t), (uint8_t*) &virtio_net_packet);
 
-#ifdef CONFIG_IDF_TARGET_LINUX
-			write(fd_tun, virtio_net_packet.data, sizeof(virtio_net_packet.data));
-#else
 			esp_wifi_internal_tx(WIFI_IF_STA, &virtio_net_packet.data, sizeof(virtio_net_packet.data));
-#endif
 
 			// ######################################################################
 			virtq_used.ring[virtq_used.idx % virtio_queue->num].id = virtq_avail.ring[virtq_used.idx % virtio_queue->num];
@@ -1245,9 +1170,7 @@ void bus_write(uint32_t addr, uint8_t size, uint64_t value) {
 		case 0x00 /*offset*/:
 			if (value == 0x00007777 /*syscon-reboot*/
 					|| value == 0x00005555 /*syscon-poweroff*/) {
-#ifndef CONFIG_IDF_TARGET_LINUX
 				esp_restart();
-#endif
 			}
 		}
 
@@ -2486,7 +2409,6 @@ struct flow_wifi2eth_msg_t {
 	void *packet, *eb;
 	uint16_t length;
 };
-#ifndef CONFIG_IDF_TARGET_LINUX
 static QueueHandle_t net0_queue = NULL;
 
 static int pkt_wifi2eth(void *buffer, uint16_t len, void *eb) {
@@ -2513,7 +2435,6 @@ static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_
 	}
 }
 
-#endif
 
 void cpu_loop(void *pvParameters){
 
@@ -2523,14 +2444,7 @@ void cpu_loop(void *pvParameters){
 
 	for(;;){
 
-#ifdef CONFIG_IDF_TARGET_LINUX
-		struct timeval tv;
-
-		gettimeofday(&tv, (void*) 0);
-		*(uint64_t*) &clint.time = ((tv.tv_sec + tv.tv_usec/1000000.0) /*seconds*/ * 240000000 /*timebase-frequency*/);
-#else
 		*(uint64_t*) &clint.time = esp_timer_get_time() /*microseconds*/ * 240 /*Mhz*/;
-#endif
 
 		if ( *(uint32_t*) &clint.time > *(uint32_t*) &clint.timecmp) {
 			csr.sip |= (1 << SUPERVISOR_TIMER_INTERRUPT);
@@ -2589,7 +2503,6 @@ void cpu_loop(void *pvParameters){
 			}*/
 		}
 
-#ifndef CONFIG_IDF_TARGET_LINUX
 		if (virtio8_net.queue[0 /*receiveq1*/].notify && uxQueueMessagesWaiting(net0_queue)){
 			struct virtio_queue_t *virtio_queue = &virtio8_net.queue[0];
 
@@ -2662,97 +2575,8 @@ void cpu_loop(void *pvParameters){
 				csr.sip |= (1 << SUPERVISOR_EXTERNAL_INTERRUPT);
 			}
 		}
-#else
-		if (virtio8_net.queue[0 /*receiveq1*/].notify){
 
-			struct timeval timeout= { .tv_sec= 0, .tv_usec= 0 };
-
-			fd_set set;
-
-			FD_ZERO( &set );
-			FD_SET(fd_tun, &set);
-
-			if (select(FD_SETSIZE, &set, NULL, NULL, &timeout)){
-				struct virtio_queue_t *virtio_queue = &virtio8_net.queue[0];
-
-				virtio_queue->notify = 0;
-
-				struct virtq_avail_t virtq_avail;
-				stream_lru_read(virtio_queue->driver_addr - RAM_BASE, sizeof(struct virtq_avail_t), (uint8_t*) &virtq_avail);
-
-				struct virtq_used_t virtq_used;
-				stream_lru_read(virtio_queue->dev_addr - RAM_BASE, sizeof(struct virtq_used_t), (uint8_t*) &virtq_used);
-
-				struct virtio_net_hdr_t {
-					uint8_t flags;
-					uint8_t gso_type;
-					uint16_t hdr_len;
-					uint16_t gso_size;
-					uint16_t csum_start;
-					uint16_t csum_offset;
-					uint16_t num_buffers;
-				};
-
-				while (virtq_used.idx != virtq_avail.idx) {
-
-					if (select(FD_SETSIZE, &set, NULL, NULL, &timeout)){
-
-						uint8_t packet[65535];
-						int length= read(fd_tun, &packet, sizeof(packet));
-
-						struct virtq_desc_t virtq_desc;
-						stream_lru_read( virtio_queue->desc_addr + virtq_avail.ring[virtq_used.idx % virtio_queue->num] * sizeof(struct virtq_desc_t) - RAM_BASE, sizeof(struct virtq_desc_t), (uint8_t*) &virtq_desc);
-
-						// ######################################################################
-	//					assert(virtq_desc.flags & (2 /*VRING_DESC_F_WRITE*/));
-
-						struct virtio_net_hdr_t virtio_net_hdr= {0x00, 0x00, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000};
-						stream_lru_write(virtq_desc.addr - RAM_BASE, sizeof(struct virtio_net_hdr_t), (uint8_t*) &virtio_net_hdr);
-
-						stream_lru_write((virtq_desc.addr - RAM_BASE) + sizeof(struct virtio_net_hdr_t), length, packet);
-
-						// ######################################################################
-						virtq_used.ring[virtq_used.idx % virtio_queue->num].id = virtq_avail.ring[virtq_used.idx % virtio_queue->num];
-						virtq_used.ring[virtq_used.idx % virtio_queue->num].len = sizeof(struct virtio_net_hdr_t) + length;
-
-					} else {
-
-						virtq_used.ring[virtq_used.idx % virtio_queue->num].id = virtq_avail.ring[virtq_used.idx % virtio_queue->num];
-						virtq_used.ring[virtq_used.idx % virtio_queue->num].len = 0;
-					}
-
-					++virtq_used.idx;
-				}
-
-				stream_lru_write(virtio_queue->dev_addr - RAM_BASE, sizeof(struct virtq_used_t), (uint8_t*) &virtq_used);
-
-	//			assert(~virtq_avail.flags & (1 /*VIRTQ_AVAIL_F_NO_INTERRUPT*/));
-
-				plic.sclaim |= (1 << 0x08 /*net's irq*/);
-				csr.sip |= (1 << SUPERVISOR_EXTERNAL_INTERRUPT);
-
-				virtio8_net.int_status |= 1;
-			}
-		}
-#endif
-
-#ifdef CONFIG_IDF_TARGET_LINUX
-
-		struct timeval timeout= { .tv_sec= 0, .tv_usec= 0 };
-
-		fd_set set;
-
-		FD_ZERO( &set );
-		FD_SET(STDIN_FILENO, &set);
-
-		if (virtio1_console.queue[0 /*receiveq*/].notify && select(FD_SETSIZE, &set, NULL, NULL, &timeout) ) {
-			uart_reading= read(STDIN_FILENO, &uart_buff, sizeof(uart_buff));
-
-#elif CONFIG_IDF_TARGET_ESP32S3
 		if (virtio1_console.queue[0 /*receiveq*/].notify && (uart_reading= fread(&uart_buff, sizeof(uint8_t), sizeof(uart_buff), stdin) ) ) {
-#elif defined CONFIG_IDF_TARGET_ESP32
-		if (virtio1_console.queue[0 /*receiveq*/].notify && (uart_reading= uart_read_bytes(UART_NUM_0, &uart_buff, sizeof(uart_buff), 0))) {
-#endif
 			struct virtio_queue_t *virtio_queue = &virtio1_console.queue[0];
 
 			virtio_queue->notify = 0;
@@ -2789,65 +2613,6 @@ void cpu_loop(void *pvParameters){
 
 void app_main() {
 
-#ifdef CONFIG_IDF_TARGET_LINUX
-	struct termios tattr;
-	tcgetattr (STDIN_FILENO, &tattr);
-
-	tattr.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
-	tattr.c_lflag &= ~(ECHO|ECHONL|ICANON|IEXTEN);
-
-	uint8_t allow_ctrlc= 1;
-
-	if (!allow_ctrlc)
-		tattr.c_lflag &= ~ISIG;
-
-	tattr.c_cc[VMIN] = 1;
-	tattr.c_cc[VTIME] = 0;
-	tcsetattr(STDIN_FILENO, TCSANOW, &tattr);
-
-	/* bridge configuration (connect tap0 to bridge interface br0)
-	   ip link add br0 type bridge
-	   ip tuntap add dev tap0 mode tap [user x] [group x]
-	   ip link set tap0 master br0
-	   ip link set dev br0 up
-	   ip link set dev tap0 up
-
-	# NAT configuration (eth1 is the interface connected to internet)
-	   ifconfig br0 192.168.3.1
-	   echo 1 > /proc/sys/net/ipv4/ip_forward
-	   iptables -D FORWARD 1
-	   iptables -t nat -A POSTROUTING -s 192.168.3.0/24 -o wlo1 -j MASQUERADE
-
-	   In the VM:
-	   ifconfig eth0 192.168.3.2
-	   route add -net 0.0.0.0 netmask 0.0.0.0 gw 192.168.3.1*/
-
-	fd_tun = open("/dev/net/tun", O_RDWR);
-	assert(fd_tun > 0);
-
-	struct ifreq ifr;
-	memset(&ifr, 0, sizeof(ifr));
-
-	strcpy(ifr.ifr_name, "tap0");
-	ifr.ifr_flags = IFF_TAP | IFF_NO_PI;
-
-	if ( ioctl(fd_tun, TUNSETIFF, (void*) &ifr) < 0) {
-
-		printf("Error: could not configure /dev/net/tun\n");
-	}
-
-	partition.data = fopen("/data/memfile0xf00000.bin", "w+");
-	for (uint16_t x = 0; x < (0xf00000 /*15MB*/ / LRU_SEC_SIZE); x++) {
-
-		struct window_t *win = &window_[x];
-
-		win->w= 0;
-		win->sector= x;
-		win->time= 0x0000;
-		win->data = malloc(LRU_SEC_SIZE);
-	}
-
-#elif CONFIG_IDF_TARGET_ESP32S3
 	esp_vfs_littlefs_conf_t littlefs_conf = {
 			.base_path = "/data",
 			.partition_label = "_linux",
@@ -2904,73 +2669,7 @@ void app_main() {
 
 	ESP_ERROR_CHECK(uart_param_config(UART_NUM_1, &uart_config_1));
 
-#elif defined CONFIG_IDF_TARGET_ESP32
 
-	spi_bus_config_t bus_cfg = {
-			.mosi_io_num = GPIO_NUM_23,
-			.miso_io_num = GPIO_NUM_19,
-			.sclk_io_num = GPIO_NUM_18,
-			.quadwp_io_num = -1,
-			.quadhd_io_num = -1,
-			.max_transfer_sz = 0 };
-
-	ESP_ERROR_CHECK( spi_bus_initialize(SPI2_HOST, &bus_cfg, SPI_DMA_CH_AUTO) );
-
-	sdmmc_card_t *card;
-
-	esp_vfs_fat_sdmmc_mount_config_t sdmmc_mount_config = {
-			.format_if_mount_failed = false,
-			.max_files = 3,
-			.allocation_unit_size = 0 };
-
-	sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
-	slot_config.gpio_cs = GPIO_NUM_5 /*ss*/;
-	slot_config.host_id = SPI2_HOST;
-
-	sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-
-	ESP_ERROR_CHECK( esp_vfs_fat_sdspi_mount("/data", &host, &slot_config, &sdmmc_mount_config, &card));
-
-	partition.data = fopen("/data/memfile0xf00000.bin", "w+");
-	for (uint16_t x = 0; x < (0xf00000 /*15MB*/ / LRU_SEC_SIZE); x++) {
-
-		struct window_t *win = &window_[x];
-
-		win->w= 0;
-		win->sector= x;
-		win->time= 0x0000;
-		win->data= heap_caps_malloc(LRU_SEC_SIZE, MALLOC_CAP_SPIRAM);
-	}
-
-	// ################################################################
-	ESP_ERROR_CHECK( uart_driver_install(UART_NUM_0, 256, 256, 0, (void *) 0, 0) );
-	ESP_ERROR_CHECK( uart_set_pin(UART_NUM_0, GPIO_NUM_1, GPIO_NUM_3, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) );
-
-	uart_config_t uart_config_0 = {
-			.baud_rate = 115200,
-			.data_bits = UART_DATA_8_BITS,
-			.parity = UART_PARITY_DISABLE,
-			.stop_bits = UART_STOP_BITS_1,
-			.flow_ctrl = UART_HW_FLOWCTRL_DISABLE };
-
-	ESP_ERROR_CHECK( uart_param_config(UART_NUM_0, &uart_config_0) );
-
-	// ################################################################
-	ESP_ERROR_CHECK( uart_driver_install(UART_NUM_1, 256, 256, 0, (void *) 0, 0) );
-	ESP_ERROR_CHECK( uart_set_pin(UART_NUM_1, GPIO_NUM_27, GPIO_NUM_14, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) );
-
-	uart_config_t uart_config_1 = {
-			.baud_rate = 115200,
-			.data_bits = UART_DATA_8_BITS,
-			.parity = UART_PARITY_DISABLE,
-			.stop_bits = UART_STOP_BITS_1,
-			.flow_ctrl = UART_HW_FLOWCTRL_DISABLE };
-
-	ESP_ERROR_CHECK( uart_param_config(UART_NUM_1, &uart_config_1) );
-
-#endif
-
-#ifndef CONFIG_IDF_TARGET_LINUX
 	net0_queue = xQueueCreate(16 /*queue-length*/, sizeof(struct flow_wifi2eth_msg_t));
 
 	ESP_ERROR_CHECK( esp_event_loop_create_default() );
@@ -2995,7 +2694,6 @@ void app_main() {
 	ESP_ERROR_CHECK( esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
 
 	ESP_ERROR_CHECK( esp_wifi_start() );
-#endif
 
 	csr.misa =
 			(1 << 0 /*Atomic extension*/) |
@@ -3136,9 +2834,7 @@ void app_main() {
 		virtio_net_config->mac[4]= 0x00;
 		virtio_net_config->mac[5]= 0x01;
 
-#ifndef CONFIG_IDF_TARGET_LINUX
 		ESP_ERROR_CHECK( esp_wifi_get_mac(WIFI_IF_STA, (uint8_t*) &virtio_net_config->mac) );
-#endif
 	}
 
 	// ################################################################
