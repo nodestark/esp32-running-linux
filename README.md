@@ -6,4 +6,4 @@ This project allows you to run a lightweight Linux environment on the ESP32, lev
 
 The emulator translates RISC-V instructions into ESP32-compatible instructions, enabling the execution of basic Linux functionalities.
 
-[![riscv-esp32-linux on YouTube](esp32-riscv-emu-linux.jpeg)](https://youtu.be/RffAsl98R4o?si=HZfnRIMDvLjHM8QV)
+[![riscv-esp32-linux on YouTube](esp32-s3n16r8.jpeg)](https://youtu.be/RffAsl98R4o?si=HZfnRIMDvLjHM8QV)

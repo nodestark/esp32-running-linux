@@ -1,2 +1,5 @@
 machine-esp32/build
 machine-esp32-s3n16r8/build
+machine-esp32-s3n16r8/dependencies.lock
+machine-esp32-s3n16r8/managed_components/
+
