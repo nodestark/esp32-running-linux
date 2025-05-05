@@ -1,0 +1,7 @@
+# ESP-IDF Partition Table
+# Name, Type, SubType, Offset, Size, Flags
+nvs,data,nvs,0x9000,24K,
+factory,app,factory,0x10000,960K,
+_linux,data,littlefs,0x100000,8M,
+_memory,data,undefined,,7M,
+_notused,data,undefined,0x1000000,16M,
