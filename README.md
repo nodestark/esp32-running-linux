@@ -10,7 +10,7 @@ The emulator translates RISC-V instructions into instructions compatible with th
 [![riscv-esp32-linux on YouTube](esp32-s3n16r8.jpeg)](https://youtu.be/RffAsl98R4o?si=HZfnRIMDvLjHM8QV)
 
 # 💻 Flashing and Setup
-1. Create the Filesystem Image
+1. Create the Filesystem Image (It's there already)
 
 ```
 mklittlefs -c data -b 4096 -p 256 -s $((8*1024*1024)) littlefs.bin
