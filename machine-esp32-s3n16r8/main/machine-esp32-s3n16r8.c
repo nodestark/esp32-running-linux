@@ -7,19 +7,13 @@
 
 #include <stdio.h>
 #include <string.h>
-
-#include "freertos/FreeRTOS.h"
-
+#include <freertos/FreeRTOS.h>
 #include <driver/uart.h>
 #include <driver/gpio.h>
 #include <esp_private/wifi.h>
 #include <esp_timer.h>
 #include <nvs_flash.h>
-
 #include <esp_littlefs.h>
-#include <tinyusb.h>
-#include <tusb_cdc_acm.h>
-#include <tusb_console.h>
 
 #define MIN(x, y) (x < y ? x : y)
 #define MAX(x, y) (x > y ? x : y)
@@ -2643,20 +2637,6 @@ void app_main() {
 	}
 
 	// ################################################################
-	const tinyusb_config_t tusb_cfg = {
-			.device_descriptor = (void*) 0,
-			.string_descriptor = (void*) 0,
-			.external_phy = false,
-			.configuration_descriptor = (void*) 0,
-	};
-	ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
-
-	tinyusb_config_cdcacm_t acm_cfg = { 0 };
-	ESP_ERROR_CHECK(tusb_cdc_acm_init(&acm_cfg));
-
-    esp_tusb_init_console(TINYUSB_CDC_ACM_0);
-
-	// ################################################################
 	ESP_ERROR_CHECK(uart_driver_install(UART_NUM_1, 256, 256, 0, (void*) 0, 0));
 	ESP_ERROR_CHECK (uart_set_pin( UART_NUM_1, GPIO_NUM_17, GPIO_NUM_18, -1, -1));
 
@@ -2669,7 +2649,7 @@ void app_main() {
 
 	ESP_ERROR_CHECK(uart_param_config(UART_NUM_1, &uart_config_1));
 
-
+	// ################################################################
 	net0_queue = xQueueCreate(16 /*queue-length*/, sizeof(struct flow_wifi2eth_msg_t));
 
 	ESP_ERROR_CHECK( esp_event_loop_create_default() );
