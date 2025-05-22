@@ -30,4 +30,4 @@ idf.py flash monitor
 > Make sure your ESP-IDF environment is correctly set up before starting.
 > Tested with ESP32-S3 and a 16MB flash configuration.
 > The Linux environment is minimal and designed for embedded purposes.
-> ▶️ ![I'm on YouTube!](https://youtu.be/RffAsl98R4o?si=HZfnRIMDvLjHM8QV)
+> ▶️ [I'm on YouTube!](https://youtu.be/RffAsl98R4o?si=HZfnRIMDvLjHM8QV)
