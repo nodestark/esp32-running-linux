@@ -7,7 +7,10 @@ This project enables the execution of a lightweight Linux environment on the ESP
 # ⚙️ How It Works
 The emulator translates RISC-V instructions into instructions compatible with the ESP32, allowing the system to simulate a RISC-V processor environment and run a minimal Linux kernel.
 
-[![riscv-esp32-linux on YouTube](esp32-s3n16r8.jpeg)](https://youtu.be/RffAsl98R4o?si=HZfnRIMDvLjHM8QV)
+![esp32-running-linux](esp32-s3n16r8.jpeg)
+
+![I'm on YouTube!](https://youtu.be/RffAsl98R4o?si=HZfnRIMDvLjHM8QV)
+
 
 # 💻 Flashing and Setup
 1. Create the Filesystem Image (It's there already)
