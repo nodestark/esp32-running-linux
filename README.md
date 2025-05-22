@@ -9,9 +9,6 @@ The emulator translates RISC-V instructions into instructions compatible with th
 
 ![esp32-running-linux](esp32-s3n16r8.jpeg)
 
-![I'm on YouTube!](https://youtu.be/RffAsl98R4o?si=HZfnRIMDvLjHM8QV)
-
-
 # 💻 Flashing and Setup
 1. Create the Filesystem Image (It's there already)
 
@@ -33,3 +30,4 @@ idf.py flash monitor
 > Make sure your ESP-IDF environment is correctly set up before starting.
 > Tested with ESP32-S3 and a 16MB flash configuration.
 > The Linux environment is minimal and designed for embedded purposes.
+> ▶️ ![I'm on YouTube!](https://youtu.be/RffAsl98R4o?si=HZfnRIMDvLjHM8QV)
