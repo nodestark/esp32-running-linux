@@ -15,6 +15,8 @@
 #include <nvs_flash.h>
 #include <esp_littlefs.h>
 
+#include "esp_private/esp_clk.h"
+
 #define MIN(x, y) (x < y ? x : y)
 #define MAX(x, y) (x > y ? x : y)
 
@@ -87,14 +89,8 @@ struct uart_t {
 } uart_com_1 = { .lsr = 0 | (1 << 5 /*THR Empty*/) };
 
 struct clint_t {
-	struct time_t {
-		uint32_t time_lo;
-		uint32_t time_hi;
-	} time;
-	struct timecmp_t {
-		uint32_t time_lo;
-		uint32_t time_hi;
-	} timecmp;
+	uint64_t time;
+	uint64_t timecmp;
 } clint;
 
 struct csr_t {
@@ -523,10 +519,10 @@ void csr_read_(uint32_t offset, uint32_t **value) {
 		*value = &csr.pmpaddr0;
 		break;
 	case 0xc01:
-		*value = &clint.time.time_lo;
+		*value = (uint32_t*) &clint.time;
 		break;
 	case 0xc81:
-		*value = &clint.time.time_hi;
+		*value = ((uint32_t*) &clint.time) + 1;
 		break;
 	case 0xf14:
 		*value = &csr.mhartid;
@@ -569,10 +565,10 @@ void clint_read(uint32_t offset, uint32_t *value) {
 
 	switch (offset) {
 	case 0x00004000:
-		*value = clint.timecmp.time_lo;
+		*value = clint.timecmp;
 		break;
 	case 0x00004004:
-		*value = clint.timecmp.time_hi;
+		*value = clint.timecmp >> 32;
 		break;
 	default:
 		*value = 0;
@@ -581,17 +577,16 @@ void clint_read(uint32_t offset, uint32_t *value) {
 }
 
 void clint_write(uint32_t offset, uint32_t value) {
-
-	switch (offset) {
-	case 0x00004000:
-		clint.timecmp.time_lo= value;
-		break;
-	case 0x00004004:
-		clint.timecmp.time_hi= value;
-		break;
-	default:
-		break;
-	}
+    switch (offset) {
+        case 0x00004000:  // lower 32 bits
+            clint.timecmp = (clint.timecmp & 0xFFFFFFFF00000000ULL) | value;
+            break;
+        case 0x00004004:  // upper 32 bits
+            clint.timecmp = (clint.timecmp & 0x00000000FFFFFFFFULL) | ((uint64_t)value << 32);
+            break;
+        default:
+            break;
+    }
 }
 
 void uart1_write(uint32_t offset, uint8_t value) {
@@ -2438,9 +2433,9 @@ void cpu_loop(void *pvParameters){
 
 	for(;;){
 
-		*(uint64_t*) &clint.time = esp_timer_get_time() /*microseconds*/ * 240 /*Mhz*/;
+		clint.time = esp_timer_get_time() /*microseconds*/ * 240 /*Mhz*/;
 
-		if ( *(uint32_t*) &clint.time > *(uint32_t*) &clint.timecmp) {
+		if ( (uint32_t) clint.time > (uint32_t) clint.timecmp) {
 			csr.sip |= (1 << SUPERVISOR_TIMER_INTERRUPT);
 		}
 
@@ -2449,7 +2444,7 @@ void cpu_loop(void *pvParameters){
 			addr= cpu.pc & ~3;
 			if (cpu_addr_translate(&addr, INSTRUCTION_PAGE_FAULT)) {
 
-				stream_lru_read(addr - RAM_BASE, sizeof(inst), (uint8_t*) &inst);
+				stream_lru_read(addr - RAM_BASE, 8, (uint8_t*) &inst);
 
 				if ((cpu.pc & 2) == 2) {
 
